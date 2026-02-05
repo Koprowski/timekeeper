@@ -47,8 +47,7 @@ model TimeEntryProject {
 }
 
 model Settings {
-  id    String @id @default("singleton")
-  key   String @unique
+  key   String @id
   value String // JSON-encoded value
 }
 

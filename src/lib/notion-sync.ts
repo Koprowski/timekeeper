@@ -1,6 +1,50 @@
-import { Client } from "@notionhq/client";
+import https from "https";
 import { prisma } from "./prisma";
-import { getNotionClient, getNotionDatabaseId } from "./notion";
+import { getNotionDatabaseId } from "./notion";
+
+const NOTION_API_VERSION = "2025-09-03";
+
+async function getNotionToken(): Promise<string | null> {
+  const setting = await prisma.settings.findUnique({
+    where: { key: "notion_token" },
+  });
+  if (!setting?.value) return null;
+  return JSON.parse(setting.value);
+}
+
+function notionRequest(
+  method: string,
+  path: string,
+  token: string,
+  body?: Record<string, unknown>
+): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    const options = {
+      hostname: "api.notion.com",
+      path,
+      method,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Notion-Version": NOTION_API_VERSION,
+        "Content-Type": "application/json",
+      },
+    };
+    const req = https.request(options, (res) => {
+      let data = "";
+      res.on("data", (chunk: string) => (data += chunk));
+      res.on("end", () => {
+        try {
+          resolve(JSON.parse(data));
+        } catch {
+          reject(new Error(`Invalid JSON response: ${data.slice(0, 200)}`));
+        }
+      });
+    });
+    req.on("error", reject);
+    if (body) req.write(JSON.stringify(body));
+    req.end();
+  });
+}
 
 interface EntryForSync {
   id: string;
@@ -27,6 +71,16 @@ function buildNotionProperties(entry: EntryForSync) {
   const hours = entry.duration / 3600;
 
   const properties: Record<string, unknown> = {
+    Name: {
+      title: [
+        {
+          text: {
+            content:
+              entry.notes || `${projectNames.join(", ")} — ${entry.date}`,
+          },
+        },
+      ],
+    },
     Date: {
       date: { start: entry.date },
     },
@@ -42,48 +96,18 @@ function buildNotionProperties(entry: EntryForSync) {
     Source: {
       select: { name: entry.source },
     },
+    Notes: entry.notes
+      ? { rich_text: [{ text: { content: entry.notes } }] }
+      : { rich_text: [] },
+    "Reference Links":
+      links.length > 0
+        ? { rich_text: [{ text: { content: links.join(", ") } }] }
+        : { rich_text: [] },
+    Tags:
+      tagsList.length > 0
+        ? { multi_select: tagsList.map((t) => ({ name: t })) }
+        : { multi_select: [] },
   };
-
-  // Title property — use notes or a default
-  properties["Entry"] = {
-    title: [
-      {
-        text: {
-          content: entry.notes || `${projectNames.join(", ")} — ${entry.date}`,
-        },
-      },
-    ],
-  };
-
-  if (entry.notes) {
-    properties["Notes"] = {
-      rich_text: [{ text: { content: entry.notes } }],
-    };
-  } else {
-    properties["Notes"] = {
-      rich_text: [],
-    };
-  }
-
-  if (links.length > 0) {
-    properties["Reference Links"] = {
-      rich_text: [{ text: { content: links.join(", ") } }],
-    };
-  } else {
-    properties["Reference Links"] = {
-      rich_text: [],
-    };
-  }
-
-  if (tagsList.length > 0) {
-    properties["Tags"] = {
-      multi_select: tagsList.map((t) => ({ name: t })),
-    };
-  } else {
-    properties["Tags"] = {
-      multi_select: [],
-    };
-  }
 
   if (entry.startTime) {
     properties["Start Time"] = {
@@ -101,10 +125,10 @@ function buildNotionProperties(entry: EntryForSync) {
 }
 
 export async function syncEntryToNotion(entryId: string): Promise<boolean> {
-  const notion = await getNotionClient();
+  const token = await getNotionToken();
   const databaseId = await getNotionDatabaseId();
 
-  if (!notion || !databaseId) {
+  if (!token || !databaseId) {
     return false;
   }
 
@@ -122,24 +146,30 @@ export async function syncEntryToNotion(entryId: string): Promise<boolean> {
   try {
     if (entry.notionPageId) {
       // Update existing page
-      await notion.pages.update({
-        page_id: entry.notionPageId,
-        properties: buildNotionProperties(entry) as Parameters<
-          Client["pages"]["update"]
-        >[0]["properties"],
-      });
+      const result = await notionRequest(
+        "PATCH",
+        `/v1/pages/${entry.notionPageId}`,
+        token,
+        { properties: buildNotionProperties(entry) }
+      );
+
+      if (result.object === "error") {
+        throw new Error(result.message as string);
+      }
     } else {
       // Create new page
-      const response = await notion.pages.create({
+      const result = await notionRequest("POST", "/v1/pages", token, {
         parent: { database_id: databaseId },
-        properties: buildNotionProperties(entry) as Parameters<
-          Client["pages"]["create"]
-        >[0]["properties"],
+        properties: buildNotionProperties(entry),
       });
+
+      if (result.object === "error") {
+        throw new Error(result.message as string);
+      }
 
       await prisma.timeEntry.update({
         where: { id: entryId },
-        data: { notionPageId: response.id },
+        data: { notionPageId: result.id as string },
       });
     }
 
@@ -162,12 +192,11 @@ export async function syncEntryToNotion(entryId: string): Promise<boolean> {
 export async function deleteEntryFromNotion(
   notionPageId: string
 ): Promise<boolean> {
-  const notion = await getNotionClient();
-  if (!notion || !notionPageId) return false;
+  const token = await getNotionToken();
+  if (!token || !notionPageId) return false;
 
   try {
-    await notion.pages.update({
-      page_id: notionPageId,
+    await notionRequest("PATCH", `/v1/pages/${notionPageId}`, token, {
       archived: true,
     });
     return true;
@@ -181,10 +210,10 @@ export async function syncAllEntriesToNotion(): Promise<{
   synced: number;
   failed: number;
 }> {
-  const notion = await getNotionClient();
+  const token = await getNotionToken();
   const databaseId = await getNotionDatabaseId();
 
-  if (!notion || !databaseId) {
+  if (!token || !databaseId) {
     return { synced: 0, failed: 0 };
   }
 
@@ -194,11 +223,6 @@ export async function syncAllEntriesToNotion(): Promise<{
         { notionSyncStatus: "pending" },
         { notionSyncStatus: "failed" },
       ],
-    },
-    include: {
-      projects: {
-        include: { project: true },
-      },
     },
   });
 
@@ -212,42 +236,4 @@ export async function syncAllEntriesToNotion(): Promise<{
   }
 
   return { synced, failed };
-}
-
-export async function ensureNotionDatabaseProperties(
-  notion: Client,
-  databaseId: string
-): Promise<void> {
-  // Retrieve current database to check properties
-  const db = await notion.databases.retrieve({ database_id: databaseId });
-  const existingProps = Object.keys(
-    (db as unknown as { properties: Record<string, unknown> }).properties
-  );
-
-  const requiredProperties: Record<string, Record<string, unknown>> = {
-    "Date": { date: {} },
-    "Project(s)": { multi_select: {} },
-    "Duration (min)": { number: {} },
-    "Duration (hrs)": { number: {} },
-    "Notes": { rich_text: {} },
-    "Reference Links": { rich_text: {} },
-    "Tags": { multi_select: {} },
-    "Source": { select: {} },
-    "Start Time": { date: {} },
-    "End Time": { date: {} },
-  };
-
-  const propsToAdd: Record<string, Record<string, unknown>> = {};
-  for (const [name, config] of Object.entries(requiredProperties)) {
-    if (!existingProps.includes(name)) {
-      propsToAdd[name] = config;
-    }
-  }
-
-  if (Object.keys(propsToAdd).length > 0) {
-    await notion.databases.update({
-      database_id: databaseId,
-      properties: propsToAdd,
-    } as Parameters<typeof notion.databases.update>[0]);
-  }
 }
