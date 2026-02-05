@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncEntryToNotion, deleteEntryFromNotion } from "@/lib/notion-sync";
+import { isNotionConfigured } from "@/lib/notion";
 
 export async function GET(
   _request: Request,
@@ -32,6 +34,7 @@ export async function GET(
     referenceLinks: JSON.parse(entry.referenceLinks),
     tags: JSON.parse(entry.tags),
     source: entry.source,
+    notionSyncStatus: entry.notionSyncStatus,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   });
@@ -59,6 +62,7 @@ export async function PUT(
       referenceLinks: JSON.stringify(body.referenceLinks ?? []),
       tags: JSON.stringify(body.tags ?? []),
       source: body.source,
+      notionSyncStatus: "pending",
       projects: {
         create: (body.projectIds as string[]).map((projectId: string) => ({
           projectId,
@@ -72,11 +76,20 @@ export async function PUT(
     },
   });
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     ...entry,
     referenceLinks: JSON.parse(entry.referenceLinks),
     tags: JSON.parse(entry.tags),
   });
+
+  // Auto-sync to Notion in background
+  isNotionConfigured().then((configured) => {
+    if (configured) {
+      syncEntryToNotion(entry.id).catch(console.error);
+    }
+  });
+
+  return response;
 }
 
 export async function DELETE(
@@ -84,6 +97,15 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
+
+  // Get the entry first to check for Notion page ID
+  const entry = await prisma.timeEntry.findUnique({ where: { id } });
+
+  if (entry?.notionPageId) {
+    // Archive in Notion (don't block on failure)
+    deleteEntryFromNotion(entry.notionPageId).catch(console.error);
+  }
+
   await prisma.timeEntry.delete({ where: { id } });
   return NextResponse.json({ success: true });
 }

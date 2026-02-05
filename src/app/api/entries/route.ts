@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { syncEntryToNotion } from "@/lib/notion-sync";
+import { isNotionConfigured } from "@/lib/notion";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -41,6 +43,7 @@ export async function GET(request: NextRequest) {
     referenceLinks: JSON.parse(entry.referenceLinks),
     tags: JSON.parse(entry.tags),
     source: entry.source,
+    notionSyncStatus: entry.notionSyncStatus,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   }));
@@ -74,9 +77,18 @@ export async function POST(request: Request) {
     },
   });
 
-  return NextResponse.json({
+  const response = NextResponse.json({
     ...entry,
     referenceLinks: JSON.parse(entry.referenceLinks),
     tags: JSON.parse(entry.tags),
   }, { status: 201 });
+
+  // Auto-sync to Notion in background (don't block response)
+  isNotionConfigured().then((configured) => {
+    if (configured) {
+      syncEntryToNotion(entry.id).catch(console.error);
+    }
+  });
+
+  return response;
 }

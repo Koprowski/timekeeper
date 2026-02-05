@@ -15,6 +15,7 @@
     "seed": "npx tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@notionhq/client": "^5.9.0",
     "@prisma/client": "^6.19.2",
     "next": "16.1.6",
     "prisma": "^6.19.2",

@@ -43,6 +43,9 @@ export default function RootLayout({
                 <a href="/projects" className="hover:text-zinc-600 dark:hover:text-zinc-300">
                   Projects
                 </a>
+                <a href="/settings" className="hover:text-zinc-600 dark:hover:text-zinc-300">
+                  Settings
+                </a>
               </nav>
             </div>
           </header>

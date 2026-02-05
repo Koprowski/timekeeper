@@ -28,6 +28,8 @@ model TimeEntry {
   referenceLinks String    @default("[]") // JSON array of URLs
   tags           String    @default("[]") // JSON array of strings
   source         String    // "timer" or "manual"
+  notionPageId   String?   // Notion page ID for sync tracking
+  notionSyncStatus String  @default("pending") // pending | synced | failed
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
@@ -43,3 +45,10 @@ model TimeEntryProject {
 
   @@id([timeEntryId, projectId])
 }
+
+model Settings {
+  id    String @id @default("singleton")
+  key   String @unique
+  value String // JSON-encoded value
+}
+
