@@ -18,6 +18,14 @@ export default function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [autoSync, setAutoSync] = useState(true);
 
+  // Google Sheets state
+  const [sheetsServiceAccount, setSheetsServiceAccount] = useState("");
+  const [spreadsheetId, setSpreadsheetId] = useState("");
+  const [sheetsSaving, setSheetsSaving] = useState(false);
+  const [sheetsSyncing, setSheetsSyncing] = useState(false);
+  const [sheetsSyncResult, setSheetsSyncResult] = useState<string | null>(null);
+  const [sheetsMessage, setSheetsMessage] = useState<string | null>(null);
+
   useEffect(() => {
     fetch("/api/settings")
       .then((res) => res.json())
@@ -25,6 +33,8 @@ export default function SettingsPage() {
         if (data.notion_token) setNotionToken(data.notion_token);
         if (data.notion_database_id) setNotionDatabaseId(data.notion_database_id);
         if (data.notion_auto_sync !== undefined) setAutoSync(data.notion_auto_sync);
+        if (data.google_service_account) setSheetsServiceAccount("configured");
+        if (data.google_spreadsheet_id) setSpreadsheetId(data.google_spreadsheet_id);
       })
       .catch(console.error);
   }, []);
@@ -125,7 +135,71 @@ export default function SettingsPage() {
     }
   };
 
+  const saveSheetsConfig = async () => {
+    setSheetsSaving(true);
+    setSheetsMessage(null);
+    try {
+      const settings: Record<string, unknown> = {};
+      if (sheetsServiceAccount && sheetsServiceAccount !== "configured") {
+        // Validate JSON
+        try {
+          JSON.parse(sheetsServiceAccount);
+        } catch {
+          setSheetsMessage("Invalid JSON. Paste the full service account JSON key file.");
+          setSheetsSaving(false);
+          return;
+        }
+        settings.google_service_account = sheetsServiceAccount;
+      }
+      if (spreadsheetId) {
+        settings.google_spreadsheet_id = spreadsheetId;
+      }
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings),
+      });
+      if (res.ok) {
+        if (sheetsServiceAccount && sheetsServiceAccount !== "configured") {
+          setSheetsServiceAccount("configured");
+        }
+        setSheetsMessage("Google Sheets configuration saved.");
+        // Ensure headers exist
+        if (spreadsheetId) {
+          await fetch("/api/sheets/setup", { method: "POST" });
+        }
+      }
+    } catch {
+      setSheetsMessage("Failed to save configuration.");
+    } finally {
+      setSheetsSaving(false);
+    }
+  };
+
+  const syncAllSheets = async () => {
+    setSheetsSyncing(true);
+    setSheetsSyncResult(null);
+    try {
+      const res = await fetch("/api/sheets/sync", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (data.error) {
+        setSheetsSyncResult(data.error);
+      } else {
+        setSheetsSyncResult(`Synced: ${data.synced}, Failed: ${data.failed}`);
+      }
+    } catch {
+      setSheetsSyncResult("Sync request failed.");
+    } finally {
+      setSheetsSyncing(false);
+    }
+  };
+
   const isConnected = notionToken && notionDatabaseId;
+  const isSheetsConnected = sheetsServiceAccount && spreadsheetId;
 
   return (
     <div className="mx-auto max-w-lg flex flex-col gap-8">
@@ -266,6 +340,104 @@ export default function SettingsPage() {
 
         {message && (
           <p className="text-sm text-zinc-600 dark:text-zinc-400">{message}</p>
+        )}
+      </div>
+
+      {/* Google Sheets Integration */}
+      <div className="flex flex-col gap-4 rounded-lg border border-zinc-200 p-6 dark:border-zinc-800">
+        <div className="flex items-center justify-between">
+          <h3 className="font-semibold">Google Sheets Integration</h3>
+          {isSheetsConnected && (
+            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700 dark:bg-green-900 dark:text-green-300">
+              Connected
+            </span>
+          )}
+        </div>
+
+        <p className="text-sm text-zinc-500">
+          Sync time entries to a Google Spreadsheet. Create a{" "}
+          <a
+            href="https://console.cloud.google.com/iam-admin/serviceaccounts"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-500 hover:underline"
+          >
+            service account
+          </a>
+          , download the JSON key, and share your spreadsheet with the service account email.
+        </p>
+
+        {/* Service Account JSON */}
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Service Account Key (JSON)
+          </label>
+          {sheetsServiceAccount === "configured" ? (
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-zinc-600 dark:text-zinc-400">
+                Service account configured
+              </span>
+              <button
+                onClick={() => setSheetsServiceAccount("")}
+                className="text-xs text-zinc-400 hover:text-zinc-600"
+              >
+                Replace
+              </button>
+            </div>
+          ) : (
+            <textarea
+              value={sheetsServiceAccount}
+              onChange={(e) => setSheetsServiceAccount(e.target.value)}
+              className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm font-mono dark:border-zinc-700 dark:bg-zinc-900"
+              placeholder='{"type": "service_account", ...}'
+              rows={4}
+            />
+          )}
+        </div>
+
+        {/* Spreadsheet ID */}
+        <div>
+          <label className="mb-1 block text-sm font-medium">
+            Spreadsheet ID
+          </label>
+          <input
+            type="text"
+            value={spreadsheetId}
+            onChange={(e) => setSpreadsheetId(e.target.value)}
+            className="w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+            placeholder="From the spreadsheet URL: /d/{spreadsheet-id}/edit"
+          />
+        </div>
+
+        {/* Save button */}
+        <button
+          onClick={saveSheetsConfig}
+          disabled={sheetsSaving || (!sheetsServiceAccount && !spreadsheetId)}
+          className="w-fit rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+        >
+          {sheetsSaving ? "Saving..." : "Save Configuration"}
+        </button>
+
+        {/* Manual sync */}
+        {isSheetsConnected && (
+          <div>
+            <button
+              onClick={syncAllSheets}
+              disabled={sheetsSyncing}
+              className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-800 disabled:opacity-40 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
+            >
+              {sheetsSyncing ? "Syncing..." : "Sync All Pending Entries"}
+            </button>
+            {sheetsSyncResult && (
+              <p className="mt-2 text-sm text-zinc-500">{sheetsSyncResult}</p>
+            )}
+          </div>
+        )}
+
+        {sheetsMessage && (
+          <p className="text-sm text-zinc-600 dark:text-zinc-400">
+            {sheetsMessage}
+          </p>
         )}
       </div>
     </div>

@@ -28,8 +28,10 @@ model TimeEntry {
   referenceLinks String    @default("[]") // JSON array of URLs
   tags           String    @default("[]") // JSON array of strings
   source         String    // "timer" or "manual"
-  notionPageId   String?   // Notion page ID for sync tracking
-  notionSyncStatus String  @default("pending") // pending | synced | failed
+  notionPageId       String?   // Notion page ID for sync tracking
+  notionSyncStatus   String    @default("pending") // pending | synced | failed
+  sheetsRowIndex     Int?      // Google Sheets row number for sync tracking
+  sheetsSyncStatus   String    @default("pending") // pending | synced | failed
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 

@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncEntryToNotion } from "@/lib/notion-sync";
 import { isNotionConfigured } from "@/lib/notion";
+import { syncEntryToSheets } from "@/lib/sheets-sync";
+import { isSheetsConfigured } from "@/lib/sheets";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -44,6 +46,7 @@ export async function GET(request: NextRequest) {
     tags: JSON.parse(entry.tags),
     source: entry.source,
     notionSyncStatus: entry.notionSyncStatus,
+    sheetsSyncStatus: entry.sheetsSyncStatus,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   }));
@@ -83,11 +86,12 @@ export async function POST(request: Request) {
     tags: JSON.parse(entry.tags),
   }, { status: 201 });
 
-  // Auto-sync to Notion in background (don't block response)
+  // Auto-sync in background (don't block response)
   isNotionConfigured().then((configured) => {
-    if (configured) {
-      syncEntryToNotion(entry.id).catch(console.error);
-    }
+    if (configured) syncEntryToNotion(entry.id).catch(console.error);
+  });
+  isSheetsConfigured().then((configured) => {
+    if (configured) syncEntryToSheets(entry.id).catch(console.error);
   });
 
   return response;

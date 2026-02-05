@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { syncEntryToNotion, deleteEntryFromNotion } from "@/lib/notion-sync";
 import { isNotionConfigured } from "@/lib/notion";
+import { syncEntryToSheets, deleteEntryFromSheets } from "@/lib/sheets-sync";
+import { isSheetsConfigured } from "@/lib/sheets";
 
 export async function GET(
   _request: Request,
@@ -35,6 +37,7 @@ export async function GET(
     tags: JSON.parse(entry.tags),
     source: entry.source,
     notionSyncStatus: entry.notionSyncStatus,
+    sheetsSyncStatus: entry.sheetsSyncStatus,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
   });
@@ -63,6 +66,7 @@ export async function PUT(
       tags: JSON.stringify(body.tags ?? []),
       source: body.source,
       notionSyncStatus: "pending",
+      sheetsSyncStatus: "pending",
       projects: {
         create: (body.projectIds as string[]).map((projectId: string) => ({
           projectId,
@@ -82,11 +86,12 @@ export async function PUT(
     tags: JSON.parse(entry.tags),
   });
 
-  // Auto-sync to Notion in background
+  // Auto-sync in background (don't block response)
   isNotionConfigured().then((configured) => {
-    if (configured) {
-      syncEntryToNotion(entry.id).catch(console.error);
-    }
+    if (configured) syncEntryToNotion(entry.id).catch(console.error);
+  });
+  isSheetsConfigured().then((configured) => {
+    if (configured) syncEntryToSheets(entry.id).catch(console.error);
   });
 
   return response;
@@ -98,12 +103,14 @@ export async function DELETE(
 ) {
   const { id } = await params;
 
-  // Get the entry first to check for Notion page ID
+  // Get the entry first for sync cleanup
   const entry = await prisma.timeEntry.findUnique({ where: { id } });
 
   if (entry?.notionPageId) {
-    // Archive in Notion (don't block on failure)
     deleteEntryFromNotion(entry.notionPageId).catch(console.error);
+  }
+  if (entry?.sheetsRowIndex) {
+    deleteEntryFromSheets(entry.sheetsRowIndex).catch(console.error);
   }
 
   await prisma.timeEntry.delete({ where: { id } });
