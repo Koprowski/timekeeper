@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  color       String?
+  archived    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  entries TimeEntryProject[]
+}
+
+model TimeEntry {
+  id             String    @id @default(cuid())
+  duration       Int       // seconds
+  date           String    // YYYY-MM-DD
+  startTime      DateTime?
+  endTime        DateTime?
+  notes          String?
+  referenceLinks String    @default("[]") // JSON array of URLs
+  tags           String    @default("[]") // JSON array of strings
+  source         String    // "timer" or "manual"
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  projects TimeEntryProject[]
+}
+
+model TimeEntryProject {
+  timeEntryId String
+  projectId   String
+
+  timeEntry TimeEntry @relation(fields: [timeEntryId], references: [id], onDelete: Cascade)
+  project   Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@id([timeEntryId, projectId])
+}
