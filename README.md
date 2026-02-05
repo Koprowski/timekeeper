@@ -1,36 +1,132 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Timekeeper
+
+A personal time tracking web app with Notion and Google Sheets sync. Track time using a start/stop timer or manual entry, assign entries to multiple projects, and automatically sync everything to your preferred tools.
+
+## Features
+
+- **Timer & Manual Entry** — Start/stop timer with pause, or manually log time
+- **Multi-Project Assignment** — Assign entries to one or more projects
+- **Notes, Links & Tags** — Add context to every time entry
+- **Notion Sync** — Auto-sync entries to a Notion database
+- **Google Sheets Sync** — Auto-sync entries to a Google Spreadsheet
+- **CSV Export** — Download all entries as CSV from the history page
+- **Keyboard Shortcuts** — `S` start/stop, `P` pause/resume, `N` manual entry
+- **Responsive** — Works on desktop and mobile browsers
+
+## Tech Stack
+
+- Next.js 16 (App Router) + TypeScript
+- Tailwind CSS 4
+- Prisma 6 + SQLite (local dev)
+- Notion API (raw HTTP, API version 2025-09-03)
+- Google Sheets API (googleapis)
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
+
+- Node.js 18+
+- npm
+
+### Setup
+
+```bash
+git clone https://github.com/Koprowski/timekeeper.git
+cd timekeeper
+npm install
+```
+
+### Environment Variables
+
+Create a `.env` file in the project root:
+
+```env
+DATABASE_URL="file:./dev.db"
+```
+
+### Database
+
+```bash
+npx prisma migrate dev
+npx prisma db seed
+```
+
+This creates the SQLite database and seeds 8 default projects (TPF, Deeper Dialog, Moltbot, Home, Family, CTS, R&R, Exercise).
+
+### Run
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Integration Setup
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### Notion
 
-## Learn More
+1. Go to [notion.so/my-integrations](https://www.notion.so/my-integrations) and create a new integration
+2. Copy the integration token (starts with `ntn_`)
+3. Share your target Notion database with the integration
+4. In Timekeeper, go to **Settings** > paste the token > save > select the database
 
-To learn more about Next.js, take a look at the following resources:
+### Google Sheets
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Create a [Google Cloud service account](https://console.cloud.google.com/iam-admin/serviceaccounts)
+2. Create a key (JSON format) and download it
+3. Create a Google Spreadsheet and share it with the service account email (Editor access)
+4. In Timekeeper, go to **Settings** > paste the full JSON key > enter the Spreadsheet ID (from the URL: `/d/{SPREADSHEET_ID}/edit`) > save
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Scripts
 
-## Deploy on Vercel
+| Command | Description |
+|---------|-------------|
+| `npm run dev` | Start development server |
+| `npm run build` | Production build |
+| `npm start` | Start production server |
+| `npm run lint` | Run ESLint |
+| `npm run db:migrate` | Run Prisma migrations |
+| `npm run db:seed` | Seed default projects |
+| `npm run db:studio` | Open Prisma Studio |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Keyboard Shortcuts
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+| Key | Action |
+|-----|--------|
+| `S` | Start / Stop timer |
+| `P` | Pause / Resume timer |
+| `N` | Open manual time entry |
+
+Shortcuts are disabled when focused on input fields.
+
+## Project Structure
+
+```
+src/
+  app/
+    page.tsx              # Timer home page
+    history/page.tsx      # Entry history with filters & CSV export
+    projects/page.tsx     # Project management
+    settings/page.tsx     # Notion & Sheets configuration
+    api/
+      entries/            # CRUD for time entries
+      projects/           # CRUD for projects
+      settings/           # App settings key-value store
+      notion/             # Notion sync endpoints
+      sheets/             # Sheets sync endpoints
+  components/
+    Timer.tsx             # Start/stop/pause timer
+    TimeEntryForm.tsx     # Entry form (timer & manual)
+    ClientShell.tsx       # Layout with nav & toast provider
+    Toast.tsx             # Toast notification system
+  lib/
+    timer.ts              # Timer state management
+    prisma.ts             # Prisma client singleton
+    notion.ts             # Notion client helpers
+    notion-sync.ts        # Notion sync engine
+    sheets.ts             # Google Sheets client helpers
+    sheets-sync.ts        # Sheets sync engine
+prisma/
+  schema.prisma           # Database schema
+  seed.ts                 # Default project seeder
+```

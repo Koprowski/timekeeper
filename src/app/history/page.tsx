@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { formatDuration } from "@/lib/timer";
 import TimeEntryForm from "@/components/TimeEntryForm";
+import { useToast } from "@/components/Toast";
 
 interface EntryWithProjects {
   id: string;
@@ -27,6 +28,7 @@ export default function HistoryPage() {
   const [loading, setLoading] = useState(true);
   const [filterProject, setFilterProject] = useState("");
   const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
+  const { toast } = useToast();
 
   const fetchEntries = useCallback(() => {
     setLoading(true);
@@ -54,8 +56,40 @@ export default function HistoryPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm("Delete this entry?")) return;
-    await fetch(`/api/entries/${id}`, { method: "DELETE" });
-    fetchEntries();
+    const res = await fetch(`/api/entries/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      toast("Entry deleted");
+      fetchEntries();
+    } else {
+      toast("Failed to delete entry", "error");
+    }
+  };
+
+  const exportCSV = () => {
+    const headers = ["Date", "Project(s)", "Duration (min)", "Duration (hrs)", "Notes", "Tags", "Source", "Reference Links"];
+    const rows = entries.map((e) => [
+      e.date,
+      e.projectNames.join("; "),
+      Math.round(e.duration / 60).toString(),
+      (Math.round((e.duration / 3600) * 100) / 100).toString(),
+      (e.notes ?? "").replace(/"/g, '""'),
+      e.tags.join("; "),
+      e.source,
+      e.referenceLinks.join("; "),
+    ]);
+
+    const csv = [headers, ...rows]
+      .map((row) => row.map((cell) => `"${cell}"`).join(","))
+      .join("\n");
+
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `timekeeper-export-${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast("CSV exported");
   };
 
   // Summary stats
@@ -106,52 +140,64 @@ export default function HistoryPage() {
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <h2 className="text-xl font-semibold">Entry History</h2>
-        <select
-          value={filterProject}
-          onChange={(e) => setFilterProject(e.target.value)}
-          className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-        >
-          <option value="">All Projects</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
+        <div className="flex items-center gap-2">
+          <select
+            value={filterProject}
+            onChange={(e) => setFilterProject(e.target.value)}
+            className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+          >
+            <option value="">All Projects</option>
+            {projects.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+          {entries.length > 0 && (
+            <button
+              onClick={exportCSV}
+              className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm font-medium hover:bg-zinc-50 dark:border-zinc-700 dark:hover:bg-zinc-800"
+            >
+              Export CSV
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+      <div className="grid grid-cols-3 gap-2 sm:gap-4">
+        <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
           <p className="text-xs text-zinc-500">Today</p>
-          <p className="text-lg font-semibold font-mono">{formatDuration(todaySeconds)}</p>
+          <p className="text-base sm:text-lg font-semibold font-mono">{formatDuration(todaySeconds)}</p>
         </div>
-        <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
           <p className="text-xs text-zinc-500">This Week</p>
-          <p className="text-lg font-semibold font-mono">{formatDuration(weekSeconds)}</p>
+          <p className="text-base sm:text-lg font-semibold font-mono">{formatDuration(weekSeconds)}</p>
         </div>
-        <div className="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div className="rounded-lg border border-zinc-200 p-3 sm:p-4 dark:border-zinc-800">
           <p className="text-xs text-zinc-500">This Month</p>
-          <p className="text-lg font-semibold font-mono">{formatDuration(monthSeconds)}</p>
+          <p className="text-base sm:text-lg font-semibold font-mono">{formatDuration(monthSeconds)}</p>
         </div>
       </div>
 
       {/* Entries list */}
       {loading ? (
-        <p className="text-sm text-zinc-500">Loading...</p>
+        <div className="flex justify-center py-12">
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-zinc-100" />
+        </div>
       ) : entries.length === 0 ? (
-        <p className="text-sm text-zinc-500">No entries yet. Start tracking time!</p>
+        <p className="py-8 text-center text-sm text-zinc-500">No entries yet. Start tracking time!</p>
       ) : (
         <div className="flex flex-col gap-2">
           {entries.map((entry) => (
             <div
               key={entry.id}
-              className="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
+              className="flex flex-col gap-2 rounded-lg border border-zinc-200 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4 dark:border-zinc-800"
             >
-              <div className="flex flex-col gap-1">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-col gap-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
                   {entry.projectNames.map((name, i) => (
                     <span
                       key={i}
@@ -165,10 +211,10 @@ export default function HistoryPage() {
                   <span className="text-xs text-zinc-400 capitalize">({entry.source})</span>
                 </div>
                 {entry.notes && (
-                  <p className="text-sm text-zinc-600 dark:text-zinc-400">{entry.notes}</p>
+                  <p className="text-sm text-zinc-600 dark:text-zinc-400 truncate">{entry.notes}</p>
                 )}
                 {entry.referenceLinks.length > 0 && (
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap gap-2">
                     {entry.referenceLinks.map((link, i) => (
                       <a
                         key={i}
@@ -183,7 +229,7 @@ export default function HistoryPage() {
                   </div>
                 )}
                 {entry.tags.length > 0 && (
-                  <div className="flex gap-1">
+                  <div className="flex flex-wrap gap-1">
                     {entry.tags.map((tag, i) => (
                       <span key={i} className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs text-zinc-500 dark:bg-zinc-800">
                         {tag}
@@ -192,17 +238,17 @@ export default function HistoryPage() {
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 self-end sm:self-center shrink-0">
                 <span className="font-mono text-sm">{formatDuration(entry.duration)}</span>
                 <button
                   onClick={() => setEditingEntry(entry)}
-                  className="text-xs text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-300"
+                  className="rounded px-2 py-1 text-xs text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800"
                 >
                   Edit
                 </button>
                 <button
                   onClick={() => handleDelete(entry.id)}
-                  className="text-xs text-zinc-400 hover:text-red-500"
+                  className="rounded px-2 py-1 text-xs text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950"
                 >
                   Delete
                 </button>

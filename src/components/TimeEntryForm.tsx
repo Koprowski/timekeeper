@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Project, TimeEntry } from "@/types";
 import { formatDuration } from "@/lib/timer";
+import { useToast } from "@/components/Toast";
 
 interface TimeEntryFormProps {
   initialDuration: number | null; // seconds, from timer
@@ -34,6 +35,7 @@ export default function TimeEntryForm({
   );
   const [tags, setTags] = useState(existingEntry?.tags?.join(", ") ?? "");
   const [saving, setSaving] = useState(false);
+  const { toast } = useToast();
 
   useEffect(() => {
     const dur = existingEntry
@@ -103,11 +105,14 @@ export default function TimeEntryForm({
       });
 
       if (res.ok) {
+        toast(existingEntry ? "Entry updated" : "Entry saved");
         onSaved?.();
         onClose();
+      } else {
+        toast("Failed to save entry", "error");
       }
-    } catch (err) {
-      console.error("Failed to save entry:", err);
+    } catch {
+      toast("Failed to save entry", "error");
     } finally {
       setSaving(false);
     }

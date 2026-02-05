@@ -5,9 +5,10 @@ import { timerReducer, initialTimerState, formatDuration } from "@/lib/timer";
 
 interface TimerProps {
   onComplete: (durationSeconds: number) => void;
+  onManualEntry?: () => void;
 }
 
-export default function Timer({ onComplete }: TimerProps) {
+export default function Timer({ onComplete, onManualEntry }: TimerProps) {
   const [state, dispatch] = useReducer(timerReducer, initialTimerState);
 
   useEffect(() => {
@@ -34,11 +35,33 @@ export default function Timer({ onComplete }: TimerProps) {
     }
   }, [state.status]);
 
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      // Don't trigger when typing in inputs
+      const tag = (e.target as HTMLElement).tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+      if (e.key === "s" || e.key === "S") {
+        e.preventDefault();
+        handleStartStop();
+      } else if (e.key === "p" || e.key === "P") {
+        e.preventDefault();
+        handlePauseResume();
+      } else if ((e.key === "n" || e.key === "N") && onManualEntry) {
+        e.preventDefault();
+        onManualEntry();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [handleStartStop, handlePauseResume, onManualEntry]);
+
   const isActive = state.status === "running" || state.status === "paused";
 
   return (
     <div className="flex flex-col items-center gap-6">
-      <div className="font-mono text-6xl font-light tabular-nums tracking-tight">
+      <div className="font-mono text-5xl sm:text-6xl font-light tabular-nums tracking-tight">
         {formatDuration(state.elapsed)}
       </div>
 
@@ -67,6 +90,26 @@ export default function Timer({ onComplete }: TimerProps) {
       {state.status === "paused" && (
         <p className="text-sm text-zinc-500">Paused</p>
       )}
+
+      {/* Keyboard shortcut hints */}
+      <div className="flex gap-4 text-xs text-zinc-400">
+        <span>
+          <kbd className="rounded border border-zinc-300 px-1.5 py-0.5 font-mono text-[10px] dark:border-zinc-700">S</kbd>{" "}
+          {isActive ? "Stop" : "Start"}
+        </span>
+        {isActive && (
+          <span>
+            <kbd className="rounded border border-zinc-300 px-1.5 py-0.5 font-mono text-[10px] dark:border-zinc-700">P</kbd>{" "}
+            {state.status === "paused" ? "Resume" : "Pause"}
+          </span>
+        )}
+        {!isActive && (
+          <span>
+            <kbd className="rounded border border-zinc-300 px-1.5 py-0.5 font-mono text-[10px] dark:border-zinc-700">N</kbd>{" "}
+            Manual entry
+          </span>
+        )}
+      </div>
     </div>
   );
 }

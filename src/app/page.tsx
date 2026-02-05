@@ -30,7 +30,7 @@ export default function Home() {
       {!showForm && (
         <>
           <div className="pt-12">
-            <Timer onComplete={handleTimerComplete} />
+            <Timer onComplete={handleTimerComplete} onManualEntry={handleManualEntry} />
           </div>
           <button
             onClick={handleManualEntry}
